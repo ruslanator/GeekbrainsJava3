@@ -8,16 +8,17 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.net.Socket;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
 
 public class ClientGUI extends JFrame implements ActionListener, Thread.UncaughtExceptionHandler, SocketThreadListener {
     private static final int WIDTH = 600;
     private static final int HEIGHT = 300;
+    File file = new File("history.txt");
 
     private final JTextArea log = new JTextArea();
     private final JPanel panelTop = new JPanel(new GridLayout(2, 3));
@@ -43,7 +44,7 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
     public static void main(String[] args) {
         SwingUtilities.invokeLater(new Runnable() {
             @Override
-            public void run() { // Event Dispatching Thread
+            public void run() { 
                 new ClientGUI();
             }
         });
@@ -93,8 +94,14 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
             sendMessage();
         } else if (src == btnLogin) {
             connect();
+            try {
+                loadHistory();
+            } catch (IOException ioException) {
+                ioException.printStackTrace();
+            }
         } else if (src == btnDisconnect) {
             socketThread.close();
+
         } else {
             throw new RuntimeException("Unknown source: " + src);
         }
@@ -117,14 +124,36 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
         socketThread.sendMessage(Library.getTypeClientBcast(msg));
     }
 
-    private void wrtMsgToLogFile(String msg, String username) {
-        try (FileWriter out = new FileWriter("log.txt", true)) {
-            out.write(username + ": " + msg + "\n");
-            out.flush();
+    // 1. Добавить в сетевой чат запись локальной истории в текстовый файл на клиенте.
+    private void wrtMessageToHistory(String msg) {
+        try (FileWriter fileWriter = new FileWriter(file, true)) {
+            fileWriter.write(msg + "\n");
+            fileWriter.flush();
         } catch (IOException e) {
-            if (!shownIoErrors) {
-                shownIoErrors = true;
-                showException(Thread.currentThread(), e);
+            e.printStackTrace();
+        }
+    }
+
+    // 2. После загрузки клиента показывать ему последние 100 строк чата.
+    private void loadHistory() throws IOException {
+        int posHistory = 100;
+        File history = new File("history.txt");
+        ArrayList<String> historyList = new ArrayList<>();
+        FileInputStream in = new FileInputStream(history);
+        BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(in));
+
+        String temp;
+        while ((temp = bufferedReader.readLine()) != null) {
+            historyList.add(temp);
+        }
+
+        if (historyList.size() > posHistory) {
+            for (int i = historyList.size() - posHistory; i <= (historyList.size() - 1); i++) {
+                log.append(historyList.get(i) + "\n");
+            }
+        } else {
+            for (int i = 0; i < historyList.size(); i++) {
+                log.append(historyList.get(i) + "\n");
             }
         }
     }
@@ -135,6 +164,7 @@ public class ClientGUI extends JFrame implements ActionListener, Thread.Uncaught
             @Override
             public void run() {
                 log.append(msg + "\n");
+                wrtMessageToHistory(msg);
                 log.setCaretPosition(log.getDocument().getLength());
             }
         });
